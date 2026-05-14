@@ -1,18 +1,4 @@
-name: Build and Push Minecraft Image
-
-on:
-  push:
-    branches: [ "main" ]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
+steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
@@ -24,18 +10,44 @@ jobs:
           aws configure set region us-east-1
 
       - name: Login to ECR
-        run: |
-          aws ecr get-login-password --region us-east-1 \
-            | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker image
-        run: docker build -t cs312-minecraft .
+      - name: Pull upstream Minecraft image
+        run: docker pull itzg/minecraft-server:latest
 
-      - name: Tag image
+      - name: Tag for ECR
         run: |
-          docker tag cs312-minecraft:latest \
+          docker tag itzg/minecraft-server:latest \
+            ${{ secrets.ECR_REGISTRY }}/cs312-minecraft:${{ github.ref_name }}
+          docker tag itzg/minecraft-server:latest \
             ${{ secrets.ECR_REGISTRY }}/cs312-minecraft:latest
 
-      - name: Push image
+      - name: Smoke test
         run: |
+          docker run -d \
+            --name mc-smoke \
+            -e EULA=TRUE \
+            -e MEMORY=1G \
+            itzg/minecraft-server:latest
+
+          echo "Waiting for server to initialize..."
+          for i in $(seq 1 12); do
+            sleep 10
+            if docker logs mc-smoke 2>&1 | grep -q "Done"; then
+              echo "Smoke test passed"
+              docker stop mc-smoke
+              exit 0
+            fi
+            echo "Attempt $i/12 — not ready yet..."
+          done
+
+          echo "Smoke test FAILED"
+          docker logs mc-smoke
+          docker stop mc-smoke
+          exit 1
+
+      - name: Push image to ECR
+        run: |
+          docker push ${{ secrets.ECR_REGISTRY }}/cs312-minecraft:${{ github.ref_name }}
           docker push ${{ secrets.ECR_REGISTRY }}/cs312-minecraft:latest
