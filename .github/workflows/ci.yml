@@ -1,4 +1,18 @@
-steps:
+name: Build and Push Minecraft Image
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
